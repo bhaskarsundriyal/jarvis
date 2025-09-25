@@ -13,6 +13,7 @@ import random
 def make_wish():
     welcome()
     hour = datetime.now().hour
+    print("Test Message")
     if 5 <= hour < 12:
         msg = random.choice(good_morning_wishes)
     elif 12 <= hour < 17:

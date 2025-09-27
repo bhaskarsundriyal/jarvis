@@ -1,0 +1,262 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>J.A.R.V.I.S. HUD – Radar Sweep</title>
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@700;900&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg-dark: #00030a;
+      --core-glow: #00e0ff;
+      --core-glow-light: #33f0ff;
+      --white: #ffffff;
+      --black: #000000;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body {
+      height: 100%; width: 100%;
+      overflow: hidden;
+      font-family: 'Orbitron', sans-serif;
+      background: var(--bg-dark);
+      color: var(--white);
+    }
+    h1.title {
+      position: absolute;
+      top: 20px; left: 50%;
+      transform: translateX(-50%);
+      font-weight: 900; font-size: 32px; letter-spacing: 8px;
+      color: var(--core-glow);
+      text-shadow: 0 0 10px var(--core-glow), 0 0 30px var(--core-glow-light);
+      user-select: none;
+    }
+    .core-area {
+      position: absolute;
+      top: 50%; left: 50%;
+      transform: translate(-50%, -50%);
+      width: 220px; height: 220px;
+      display: flex; justify-content: center; align-items: center;
+      animation: pulseGlow 3s ease-in-out infinite;
+      z-index: 2;
+    }
+    .core-circle {
+      width: 180px; height: 180px; border-radius: 50%;
+      background: var(--black);
+      border: 3px solid var(--core-glow);
+      box-shadow: 
+        0 0 40px 10px var(--core-glow),
+        inset 0 0 60px 20px rgba(0,224,255,0.6);
+      display: flex; justify-content: center; align-items: center;
+      position: relative;
+      z-index: 10;
+      user-select: none;
+    }
+    .core-circle span {
+      font-size: 120px; font-weight: 900; color: var(--white);
+      -webkit-text-stroke: 2px var(--black);
+      text-shadow: 0 0 10px var(--core-glow), 0 0 30px var(--core-glow-light);
+    }
+    @keyframes pulseGlow {
+      0%, 100% { transform: translate(-50%, -50%) scale(1); filter: drop-shadow(0 0 15px var(--core-glow)); }
+      50% { transform: translate(-50%, -50%) scale(1.08); filter: drop-shadow(0 0 40px var(--core-glow-light)); }
+    }
+
+    /* Small circles container */
+    .small-circle {
+      position: absolute;
+      width: 90px;
+      height: 90px;
+      border-radius: 50%;
+      border: 2px solid var(--core-glow);
+      box-shadow: 0 0 20px var(--core-glow), inset 0 0 20px rgba(0,224,255,0.3);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      animation: pulseSmall 2.5s ease-in-out infinite;
+      z-index: 5;
+      font-family: 'Orbitron', sans-serif;
+      cursor: default;
+      user-select: none;
+    }
+    .small-circle p {
+      text-align: center;
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--white);
+      text-shadow: 0 0 5px var(--core-glow-light);
+      margin: 0;
+      pointer-events: none;
+    }
+
+    /* Positions for small circles — spaced further away from the core */
+    .small-circle.link  { top: 0%;   left: 72%; }
+    .small-circle.data  { top: 35%;  left: 90%; }
+    .small-circle.log   { top: 80%;  left: 80%; }
+    .small-circle.node  { top: 80%;  left: 35%; }
+    .small-circle.speak { top: 35%;  left: 10%; }
+
+    @keyframes pulseSmall {
+      0%, 100% {
+        transform: scale(1);
+        filter: drop-shadow(0 0 5px var(--core-glow));
+      }
+      50% {
+        transform: scale(1.05);
+        filter: drop-shadow(0 0 15px var(--core-glow-light));
+      }
+    }
+
+    canvas#hudCanvas {
+      position: absolute;
+      top: 0; left: 0; width: 100%; height: 100%;
+      z-index: 0;
+    }
+  </style>
+</head>
+<body>
+  <h1 class="title">J.A.R.V.I.S.</h1>
+  <canvas id="hudCanvas"></canvas>
+  <section class="core-area" aria-label="Core JARVIS Interface">
+    <div class="core-circle"><span>A</span></div>
+  </section>
+
+  <!-- Small HUD circles -->
+  <div class="small-circle link"><p>LINK</p></div>
+  <div class="small-circle data"><p>DATA</p></div>
+  <div class="small-circle log"><p>LOG</p></div>
+  <div class="small-circle node"><p>NODE</p></div>
+  <div class="small-circle speak"><p>SPEAK</p></div>
+
+  <script>
+    const canvas = document.getElementById("hudCanvas");
+    const ctx = canvas.getContext("2d");
+    let w, h;
+    function resize() {
+      w = canvas.width = window.innerWidth;
+      h = canvas.height = window.innerHeight;
+    }
+    window.addEventListener("resize", resize);
+    resize();
+
+    const nodes = Array.from({ length: 25 }, () => ({
+      x: Math.random() * w,
+      y: Math.random() * h,
+      r: 2 + Math.random() * 3,
+      dx: (Math.random() - 0.5) * 0.5,
+      dy: (Math.random() - 0.5) * 0.5
+    }));
+
+    let tickAngle = 0, arcAngle = 0, radarAngle = 0;
+
+    function drawRings() {
+      ctx.strokeStyle = "rgba(0,224,255,0.25)";
+      ctx.lineWidth = 1;
+      const centerX = w/2, centerY = h/2;
+      [100, 150, 200].forEach(radius => {
+        ctx.beginPath();
+        ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
+        ctx.stroke();
+      });
+    }
+
+    function drawTicks() {
+      const centerX = w/2, centerY = h/2, radius = 220;
+      ctx.save();
+      ctx.translate(centerX, centerY);
+      ctx.rotate(tickAngle);
+      for (let i = 0; i < 36; i++) {
+        ctx.rotate((Math.PI * 2) / 36);
+        ctx.beginPath();
+        ctx.moveTo(radius - 10, 0);
+        ctx.lineTo(radius, 0);
+        ctx.strokeStyle = "rgba(0,224,255,0.8)";
+        ctx.lineWidth = 2;
+        ctx.stroke();
+      }
+      ctx.restore();
+      tickAngle += 0.005;
+    }
+
+    function drawDataArc() {
+      const centerX = w/2, centerY = h/2, radius = 260, dashCount = 30;
+      ctx.save();
+      ctx.translate(centerX, centerY);
+      ctx.rotate(arcAngle);
+      for (let i = 0; i < dashCount; i++) {
+        const angle = (Math.PI) * (i / dashCount); 
+        const x1 = Math.cos(angle) * (radius - 5);
+        const y1 = Math.sin(angle) * (radius - 5);
+        const x2 = Math.cos(angle) * (radius + 5);
+        const y2 = Math.sin(angle) * (radius + 5);
+        ctx.beginPath();
+        ctx.moveTo(x1, y1);
+        ctx.lineTo(x2, y2);
+        ctx.strokeStyle = "rgba(0,224,255,0.6)";
+        ctx.lineWidth = 2;
+        ctx.stroke();
+      }
+      ctx.restore();
+      arcAngle += 0.01;
+    }
+
+    function drawRadarSweep() {
+      const centerX = w/2, centerY = h/2, radius = 300, sweepWidth = Math.PI / 12;
+      const gradient = ctx.createRadialGradient(centerX, centerY, 0, centerX, centerY, radius);
+      gradient.addColorStop(0, "rgba(0,224,255,0.4)");
+      gradient.addColorStop(1, "rgba(0,224,255,0)");
+      ctx.save();
+      ctx.translate(centerX, centerY);
+      ctx.rotate(radarAngle);
+      ctx.beginPath();
+      ctx.moveTo(0,0);
+      ctx.arc(0,0,radius,-sweepWidth/2,sweepWidth/2);
+      ctx.closePath();
+      ctx.fillStyle = gradient;
+      ctx.fill();
+      ctx.restore();
+      radarAngle += 0.01;
+    }
+
+    function drawNodes() {
+      nodes.forEach(n => {
+        ctx.beginPath();
+        ctx.arc(n.x, n.y, n.r, 0, Math.PI * 2);
+        ctx.fillStyle = "rgba(0,224,255,0.7)";
+        ctx.fill();
+        n.x += n.dx; n.y += n.dy;
+        if (n.x < 0 || n.x > w) n.dx *= -1;
+        if (n.y < 0 || n.y > h) n.dy *= -1;
+      });
+    }
+
+    function drawConnections() {
+      for (let i = 0; i < nodes.length; i++) {
+        for (let j = i + 1; j < nodes.length; j++) {
+          const dx = nodes[i].x - nodes[j].x, dy = nodes[i].y - nodes[j].y;
+          const dist = Math.sqrt(dx*dx + dy*dy);
+          if (dist < 150) {
+            ctx.strokeStyle = `rgba(0,224,255,${1 - dist/150})`;
+            ctx.lineWidth = 0.5;
+            ctx.beginPath();
+            ctx.moveTo(nodes[i].x, nodes[i].y);
+            ctx.lineTo(nodes[j].x, nodes[j].y);
+            ctx.stroke();
+          }
+        }
+      }
+    }
+
+    function animate() {
+      ctx.clearRect(0,0,w,h);
+      drawRings();
+      drawRadarSweep();
+      drawTicks();
+      drawDataArc();
+      drawNodes();
+      drawConnections();
+      requestAnimationFrame(animate);
+    }
+    animate();
+  </script>
+</body>
+</html>

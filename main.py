@@ -21,7 +21,7 @@ from PIL import Image, ImageFilter
 VOICE = "en-AU-WilliamNeural"
 AUTHORIZED_USER = "Vashu"
 AUTH_RETRY = 3
-QNA_FILE = os.path.join(os.path.expanduser("~"), "JarvisData", "qna.txt")
+QNA_FILE = "C:/Users/ACER/Desktop/pyhon/jarvis/data/brain_data/qna.txt"
 os.makedirs(os.path.dirname(QNA_FILE), exist_ok=True)
 
 # ---------------- TTS ----------------
@@ -120,26 +120,32 @@ def welcome():
     speak(random.choice(greetings))
 
 # ---------------- QNA ----------------
-def load_qna():
+def load_qna(file_path=QNA_FILE):
     qna_dict = {}
-    if os.path.exists(QNA_FILE):
-        with open(QNA_FILE, "r", encoding="utf-8") as f:
+    if os.path.exists(file_path):
+        with open(file_path, "r", encoding="utf-8") as f:
             for line in f:
                 if ":" in line:
                     q, a = line.strip().split(":", 1)
                     qna_dict[q.lower().strip()] = a.strip()
     return qna_dict
 
-def save_qna(q, a):
-    q = q.lower().strip()
-    with open(QNA_FILE, "a", encoding="utf-8") as f:
-        f.write(f"{q}:{a}\n")
+def save_qna(question, answer, file_path=QNA_FILE):
+    with open(file_path, "a", encoding="utf-8") as f:
+        f.write(f"{question}: {answer}\n")
 
-def answer_question(q, qna_dict):
-    q = q.lower().strip()
-    match = difflib.get_close_matches(q, qna_dict.keys(), n=1, cutoff=0.7)
-    if match:
-        return qna_dict[match[0]]
+def answer_question(user_question, qna_dict):
+    """Finds high-confidence matches in qna.txt"""
+    best_match = None
+    best_ratio = 0
+    for q in qna_dict.keys():
+        ratio = difflib.SequenceMatcher(None, user_question.lower(), q.lower()).ratio()
+        if ratio > best_ratio:
+            best_ratio = ratio
+            best_match = q
+
+    if best_match and best_ratio > 0.85:
+        return qna_dict[best_match]
     return None
 
 # ---------------- PATH HELPERS ----------------
@@ -154,7 +160,6 @@ USER_FOLDERS = {
 }
 
 def search_and_open(target):
-    """Search Desktop, Documents, Downloads for matching file/folder and open it."""
     for folder in USER_FOLDERS.values():
         if os.path.exists(folder):
             for root, dirs, files in os.walk(folder):
@@ -175,32 +180,22 @@ KNOWN_SITES = {
 
 def handle_open(command):
     target = re.sub(r'(open|launch|start|go to)', '', command.lower()).strip()
-
-    # Special cases
     if target in ["my pc", "this pc", "computer"]:
         subprocess.Popen("explorer.exe shell:MyComputerFolder")
         return
     if target in USER_FOLDERS:
         os.startfile(USER_FOLDERS[target])
         return
-
-    # Websites
     if target in KNOWN_SITES:
         webbrowser.open_new_tab(KNOWN_SITES[target])
         return
-
-    # Try local search
     if search_and_open(target):
         return
-
-    # Executables
     exe = target.replace(" ", "") + ".exe"
     path = shutil.which(exe) or shutil.which(target)
     if path:
         subprocess.Popen(path)
         return
-
-    # Fallback: Google search
     webbrowser.open_new_tab(f"https://www.google.com/search?q={'+'.join(target.split())}")
 
 def handle_play(cmd):
@@ -285,36 +280,42 @@ def generate_ppt_web(topic):
         speak("Failed to generate PPT from web")
         print("generate_ppt_web error:", e)
 
-# ---------------- MAIN ----------------
+# ---------------- WIKIPEDIA SEARCH ----------------
 def wiki_search(query):
     try:
-        q = re.sub(r'(who is|what is|tell me about|define|jarvis)', '', query.lower()).strip().title()
-        if not q:
+        cleaned = re.sub(r'(who is|what is|tell me about|define|jarvis)', '', query.lower()).strip().title()
+        if not cleaned:
             return None
-        return wikipedia.summary(q, sentences=2)
-    except:
+        summary = wikipedia.summary(cleaned, sentences=2)
+        return summary
+    except Exception:
         return None
 
+# ---------------- MAIN ----------------
 def jarvis():
     if not authenticate_user():
         return
     make_wish()
     welcome()
     qna_dict = load_qna()
+
     while True:
         user_input = listen()
         if not user_input:
             user_input = input("You (type command): ").strip()
         if not user_input:
             continue
+
         cmd = user_input.lower().strip()
 
         if cmd in ["exit", "quit", "stop", "goodbye"]:
             speak("Goodbye!")
             break
+
         if "smart cv" in cmd:
             smart_cv()
             continue
+
         if "create ppt" in cmd or "generate ppt" in cmd:
             topic = ask_input("Provide the topic for PPT", "Demo Topic")
             generate_ppt_web(topic)
@@ -328,10 +329,12 @@ def jarvis():
         if cmd.startswith("play"):
             handle_play(cmd)
             continue
+
         if cmd.startswith(("open", "launch", "start", "go to")):
             handle_open(cmd)
             continue
 
+        # QNA / Wikipedia / Google logic
         response = answer_question(cmd, qna_dict)
         if response:
             speak(response)
@@ -340,8 +343,9 @@ def jarvis():
             if wiki:
                 speak(wiki)
                 save_qna(cmd, wiki)
-                qna_dict[cmd.lower()] = wiki  # keep in memory
+                qna_dict[cmd.lower()] = wiki
             else:
+                speak("I couldn't find that in my memory. Searching Google.")
                 webbrowser.open_new_tab(f"https://www.google.com/search?q={'+'.join(cmd.split())}")
 
 if __name__ == "__main__":
